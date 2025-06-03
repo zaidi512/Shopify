@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: fraud-api
+    runtime: python
+    buildCommand: ""
+    startCommand: python fraud_api.py
+    envVars:
+      - key: FLASK_ENV
+        value: production

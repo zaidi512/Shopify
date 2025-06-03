@@ -44,32 +44,55 @@ def predict():
 
 @app.route('/shopify_webhook', methods=['POST'])
 def shopify_webhook():
+    print("✅ Webhook received")
+
     try:
         order = request.json
+        print("🛒 Order payload:", order)
+
+        # Handle missing fields gracefully for test webhooks
+        order_id = order.get("id")
+        if not order_id:
+            print("❌ Missing order ID in webhook payload.")
+            return jsonify({"error": "Missing order ID"}), 400
+
+        shipping_price = 0.0
+        if "shipping_lines" in order and order["shipping_lines"]:
+            shipping_price = float(order["shipping_lines"][0].get("price", 0))
+
+        payment_method = order.get("payment_gateway_names", ["Unknown"])[0]
+
         input_data = {
             "Total": float(order.get("total_price", 0)),
-            "Shipping": float(order.get("shipping_lines", [{}])[0].get("price", 0)),
+            "Shipping": shipping_price,
             "Taxes": float(order.get("total_tax", 0)),
             "Discount Amount": float(order.get("total_discounts", 0)),
-            "Payment Method": order.get("payment_gateway_names", ["Unknown"])[0],
+            "Payment Method": payment_method,
             "Currency": order.get("currency", "USD")
         }
+
+        print("📦 Processed Input:", input_data)
+
+        # Feature engineering
         df = pd.DataFrame([input_data])
         df["Net Amount"] = df["Total"] - df["Discount Amount"] - df["Taxes"]
         df["Free Shipping"] = (df["Shipping"] == 0).astype(int)
+
+        # Handle unknown categories
         for col in ["Payment Method", "Currency"]:
             known_classes = label_encoders[col].classes_
             df[col] = df[col].apply(lambda x: x if x in known_classes else known_classes[0])
             df[col] = label_encoders[col].transform(df[col])
+
         prediction = model.predict(df[features])[0]
         risk_label = risk_encoder.inverse_transform([prediction])[0]
 
-        print(f"🛡️ Predicted Fraud Risk: {risk_label}")  # <-- Add this line
+        print(f"🛡️ Predicted Risk for Order {order_id}: {risk_label}")
 
-        tag_order(order["id"], risk_label)
         return jsonify({"status": "success", "fraud_risk": risk_label})
+
     except Exception as e:
-        print(f"❌ Error: {e}")  # <-- Add this line
+        print("❌ Exception occurred:", e)
         return jsonify({"error": str(e)}), 400
 
 

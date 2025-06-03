@@ -54,23 +54,24 @@ def shopify_webhook():
             "Payment Method": order.get("payment_gateway_names", ["Unknown"])[0],
             "Currency": order.get("currency", "USD")
         }
-
         df = pd.DataFrame([input_data])
         df["Net Amount"] = df["Total"] - df["Discount Amount"] - df["Taxes"]
         df["Free Shipping"] = (df["Shipping"] == 0).astype(int)
-
-        # Safe encoding
         for col in ["Payment Method", "Currency"]:
-            df[col] = df[col].apply(lambda x: x if x in label_encoders[col].classes_ else label_encoders[col].classes_[0])
+            known_classes = label_encoders[col].classes_
+            df[col] = df[col].apply(lambda x: x if x in known_classes else known_classes[0])
             df[col] = label_encoders[col].transform(df[col])
-
         prediction = model.predict(df[features])[0]
-        fraud_label = risk_encoder.inverse_transform([prediction])[0]
+        risk_label = risk_encoder.inverse_transform([prediction])[0]
 
-        tag_order(order["id"], fraud_label)
-        return jsonify({"status": "success", "fraud_risk": fraud_label})
+        print(f"🛡️ Predicted Fraud Risk: {risk_label}")  # <-- Add this line
+
+        tag_order(order["id"], risk_label)
+        return jsonify({"status": "success", "fraud_risk": risk_label})
     except Exception as e:
+        print(f"❌ Error: {e}")  # <-- Add this line
         return jsonify({"error": str(e)}), 400
+
 
 def tag_order(order_id, fraud_label):
     get_url = f"https://{SHOPIFY_API_KEY}:{SHOPIFY_PASSWORD}@{SHOPIFY_STORE}/admin/api/2023-10/orders/{order_id}.json"
